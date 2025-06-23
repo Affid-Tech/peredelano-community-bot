@@ -1,0 +1,85 @@
+name: Build and Deploy dndadmin
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'   # Use your Java version
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew clean shadowJar
+
+      - name: Create .env file
+        run: |
+          cat <<EOF > .env
+          GLOBAL_ADMINS=${{ secrets.GLOBAL_ADMINS }}
+          DB_URL=${{ secrets.DB_URL }}
+          DB_USERNAME=${{ secrets.DB_USERNAME }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_SCHEMA=${{ secrets.DB_SCHEMA }}
+          APP_URL=${{ secrets.APP_URL }}
+          APP_PORT=${{ secrets.APP_PORT }}
+          BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+          BOT_USERNAME=${{ secrets.BOT_USERNAME }}
+          EOF
+
+      - name: Rename jar to bot.jar
+        run: cp build/libs/*.jar bot.jar
+      
+      - name: List files after build
+        run: ls -ln build/libs
+
+      - name: List .env file
+        run: ls -ln .env
+
+      - name: Stop dndplatform service
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            sudo systemctl stop peredelanobot
+
+      - name: Upload bot.jar to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: bot.jar
+          target: ${{ secrets.APP_PATH }}
+          
+      - name: Upload .env to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: .env
+          target: ${{ secrets.APP_PATH }}
+
+      - name: Start dndplatform service
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            sudo systemctl start peredelanobot
